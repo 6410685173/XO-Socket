@@ -11,35 +11,38 @@
 #include <pthread.h>
 
 void *socket_client();
-void socket_server(int port);
+void socket_server();
 void screen();
 void send_data(GtkWidget *button, gpointer user_data);
 void recv_data();
 void update_board(int index,char c,GtkWidget *button,char *label);
 void check_winner();
 void *display();
+void restart();
 gboolean update_button_label(gpointer data);
 void schedule_button_label_update(GtkWidget *button, const gchar *label);
 void switch_to_game_mode(GtkWidget *window);
 void create_grid_and_buttons(GtkWidget *window);
 void create_server(GtkWidget *button, gpointer window);
 void join_server(GtkWidget *button, gpointer window);
+void create_join(GtkWidget *button, gpointer window);
 
 char board[3][3] = {{' ',' ',' '},
                     {' ',' ',' '},
                     {' ',' ',' '}}; //initial board
 
 GtkWidget *buttons[9];
+GtkWidget *ip_entry ;
 char my_role;
 char friend_role;
 pthread_mutex_t lock_board;
 
 // config connection
-int listen_server = 0,conn_cli = 0;
+int connect_soc = 0;
 char buffer[7];
 char mode[10] = "";
-bool has_winner = true;
-
+bool has_winner = false;
+gchar *ip_host = "";
 
 
 
@@ -55,14 +58,13 @@ int main(int argc ,char *argv[]){
 
     if ( strcmp(mode,"server") == 0){
         printf("server\n");
-        socket_server(5000);
+        socket_server();
     
     }else if (strcmp(mode,"client") == 0){
-        char ip[1024];
         printf("client\n");
-        /* printf("Enter an ip: ");
-        scanf("%s",ip); */
-        
+        //wait for entering ip 
+        while(strcmp(ip_host,"") == 0){};
+        //printf("%s\n",ip_host);
         socket_client();
 
     }else{
@@ -75,8 +77,8 @@ int main(int argc ,char *argv[]){
 
 
 // create socket
-void socket_server(int port){
-
+void socket_server(){
+    int listen_server = 0,conn_cli = 0;
     struct sockaddr_in servAddr;
     memset(&servAddr, '0', sizeof(servAddr));
     memset(buffer, '0', sizeof(buffer)); 
@@ -85,7 +87,7 @@ void socket_server(int port){
 
     servAddr.sin_family = AF_INET;
     servAddr.sin_addr.s_addr = htonl(INADDR_ANY);
-    servAddr.sin_port = htons(port); 
+    servAddr.sin_port = htons(5000); 
 
     bind(listen_server, (struct sockaddr*)&servAddr, sizeof(servAddr)); 
 
@@ -97,7 +99,7 @@ void socket_server(int port){
 }
 
 void *socket_client(){
-    
+    int listen_server = 0,conn_cli = 0;
     struct sockaddr_in servAddr;
     memset(&servAddr, '0', sizeof(servAddr));
     memset(buffer, '0', sizeof(buffer)); 
@@ -105,54 +107,52 @@ void *socket_client(){
     listen_server = socket(AF_INET, SOCK_STREAM, 0); // use TCP connection 
 
     servAddr.sin_family = AF_INET; // internet protocol IPV4
-    //servAddr.sin_addr.s_addr = htonl(INADDR_ANY);
     servAddr.sin_port = htons(5000); 
-    inet_pton(AF_INET, "127.0.0.1", &servAddr.sin_addr);
+    inet_pton(AF_INET, ip_host, &servAddr.sin_addr);
     conn_cli = connect(listen_server, (struct sockaddr *)&servAddr, sizeof(servAddr));
+    
+    if(conn_cli < 0){
+        printf("no connection");
+    }
     my_role = 'O';
     friend_role = 'X';
-    printf("%d",conn_cli);
-    //screen();
-
-    
+    connect_soc = listen_server;
     while(conn_cli >= 0){
 
-        
-        //gtk_label_set_text(GTK_LABEL(turn), "");
-        recv_data(listen_server, buffer);
+        recv_data();
+        check_winner();
         memset(buffer, '0', sizeof(buffer)); 
         printf("Your turn\n");
-        //gtk_label_set_text(GTK_LABEL(turn), "Your turn");
         screen();
-
-        check_winner();
-        sleep(1);
+        
+        
     }
 
 }
+
 void send_data(GtkWidget *button, gpointer user_data){
-    //pthread_mutex_lock (&lock_board);
+    
     int *position = (int *)user_data;
-    char label_text[2];
-    sprintf(label_text, "%c", my_role);
+    char label_send[2];
+    sprintf(label_send, "%c", my_role);
     int row = position[0];
     int col = position[1];
     snprintf(buffer, sizeof(buffer),"%d\n",row * 3 + col + 1);
-    write(listen_server, buffer, strlen(buffer)); 
-    update_board(row * 3 + col + 1, my_role, button , label_text);
-    //pthread_mutex_unlock (&lock_board);
+    write(connect_soc, buffer, strlen(buffer)); 
+    update_board(row * 3 + col + 1, my_role, button , label_send);
+    check_winner();
     
 }
 
 void recv_data(){
-    //pthread_mutex_lock (&lock_board);
+
     char position[10] ;
-    char label_text[2];
-    sprintf(label_text, "%c", friend_role); 
-    recv(listen_server, buffer, sizeof(buffer), 0); 
+    char label_recv[2];
+    sprintf(label_recv, "%c", friend_role); 
+    recv(connect_soc, buffer, sizeof(buffer), 0); 
     strcpy(position, buffer);
     printf("%s\n",position);
-    if (strcmp(position,"restart") == 0){
+    if (atoi(position) == 111){
         char new_board[3][3] = {
         {' ', ' ', ' '},
         {' ', ' ', ' '},
@@ -167,18 +167,12 @@ void recv_data(){
         
     }else{
         GtkWidget *button = buttons[atoi(position)-1];
-        update_board(atoi(position), friend_role, button , label_text);
+        update_board(atoi(position), friend_role, button , label_recv);
     }
-    
-    //pthread_mutex_unlock (&lock_board);
 }
 
 void update_board(int index,char c,GtkWidget *button,char *label){
-    /* if(board[row][col] == my_role || board[row][col] == friend_role ){
-        printf("duplicate\n");
-    }else{
-        board[row][col] = c;
-    } */
+    
     pthread_mutex_lock (&lock_board);
     if (index > 0 && index < 4){
         if(board[0][index-1] == my_role || board[0][index-1] == friend_role ){
@@ -214,34 +208,34 @@ void check_winner(){
         // check row
         for(int i = 0;i<3;i++){
             if(board[i][0] == my_role && board[i][1] == my_role && board[i][2] == my_role ){
-                printf("The winner is you\n");
+                printf("YOU WIN\n");
             }else if(board[i][0] == friend_role && board[i][1] == friend_role && board[i][2] == friend_role){
-                printf("The winner is Player2\n");
+                printf("YOU LOSE\n");
             }
         }
         
         //check column
         for(int i = 0;i<3;i++){
             if(board[0][i] == my_role && board[1][i] == my_role && board[2][i] == my_role){
-                printf("The winner is you\n");
+                printf("YOU WIN\n");
             }else if(board[0][i] == friend_role && board[1][i] == friend_role && board[2][i] == friend_role){
-                printf("The winner is Player2\n");
+                printf("YOU LOSE\n");
             }
         }
     
         //check diagonal
         if(board[0][0] == my_role && board[1][1] == my_role && board[2][2] == my_role){
-            printf("The winner is you\n");
+            printf("YOU WIN\n");
         }else if(board[0][0] == friend_role && board[1][1] == friend_role && board[2][2] == friend_role){
-            printf("The winner is Player2\n");
+            printf("YOU LOSE\n");
         }if(board[0][2] == my_role && board[1][1] == my_role && board[2][0] == my_role){
-            printf("The winner is you\n");
+            printf("YOU WIN\n");
         }else if(board[0][2] == friend_role && board[1][1] == friend_role && board[2][0] == friend_role){
-            printf("The winner is Player2\n");
-        } 
+            printf("YOU LOSE\n");
+        }
+        //sleep(1);
     //}
     pthread_mutex_unlock (&lock_board);
-    
     
 }
 
@@ -264,6 +258,22 @@ void schedule_button_label_update(GtkWidget *button, const gchar *label) {
     update_data->button = button;
     update_data->label = g_strdup(label);
     g_idle_add(update_button_label, update_data);
+}
+
+void restart(){
+    char new_board[3][3] = {
+        {' ', ' ', ' '},
+        {' ', ' ', ' '},
+        {' ', ' ', ' '}
+    };
+    for(int i = 0 ;i<9;i++){
+        schedule_button_label_update(buttons[i] , " ");
+    }
+    
+    memcpy(board, new_board, sizeof(new_board));
+    memset(buffer, '0', sizeof(buffer)); 
+    snprintf(buffer, sizeof(buffer), "%d\n",111);
+    write(connect_soc, buffer, strlen(buffer)); 
 }
 
 void screen(){
@@ -291,6 +301,7 @@ void create_grid_and_buttons(GtkWidget *window) {
     
     // Create a grid container
     GtkWidget *grid = gtk_grid_new();
+    
     gtk_container_add(GTK_CONTAINER(window), grid);
     
     // Create buttons and add them to the grid
@@ -307,8 +318,9 @@ void create_grid_and_buttons(GtkWidget *window) {
             buttons[k++] = button;
         }
     }
-    
-
+    GtkWidget *restart_button = gtk_button_new_with_label("Restart");
+    g_signal_connect(restart_button, "clicked", G_CALLBACK(restart), NULL);
+    gtk_grid_attach(GTK_GRID(grid), restart_button, 1, 4, 1, 1);   
     gtk_widget_show_all(window);
 }
 
@@ -318,13 +330,13 @@ void switch_to_game_mode(GtkWidget *window) {
     gtk_container_foreach(GTK_CONTAINER(window), (GtkCallback)gtk_widget_destroy, NULL);
     
     // Create widgets for the game mode screen
-    GtkWidget *game_label = gtk_label_new("Select Game Mode:");
+    GtkWidget *game_label = gtk_label_new("Select Game Mode");
     GtkWidget *mode1_button = gtk_button_new_with_label("Create server");
     GtkWidget *mode2_button = gtk_button_new_with_label("Join server");
     
     // Connect signals for mode selection
     g_signal_connect(mode1_button, "clicked", G_CALLBACK(create_server), window);
-    g_signal_connect(mode2_button, "clicked", G_CALLBACK(join_server), window);
+    g_signal_connect(mode2_button, "clicked", G_CALLBACK(create_join), window);
     
     // Create a vertical box to hold the widgets
     GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 10);
@@ -344,11 +356,38 @@ void create_server(GtkWidget *button, gpointer window) {
     create_grid_and_buttons(GTK_WIDGET(window));
 }
 
-// Callback function for mode 2 selection
+// Callback function for joing server
 void join_server(GtkWidget *button, gpointer window) {
     
-    strcpy(mode, "client");
+    ip_host = g_strdup(gtk_entry_get_text(GTK_ENTRY(ip_entry)));
     create_grid_and_buttons(GTK_WIDGET(window));
+}
+
+// Callback function for creating join server
+void create_join(GtkWidget *button, gpointer window) {
+    strcpy(mode, "client");
+    // Clear any existing children of the window
+    gtk_container_foreach(GTK_CONTAINER(window), (GtkCallback)gtk_widget_destroy, NULL);
+    
+    // Create box 
+    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);
+    gtk_container_add(GTK_CONTAINER(window), box);
+
+    // widget
+    ip_entry = gtk_entry_new();
+    GtkWidget *enter_button = gtk_button_new_with_label("Join");
+    GtkWidget *label = gtk_label_new("Enter IP address");
+
+    gtk_box_pack_start(GTK_BOX(box), label, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(box), ip_entry, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(box), enter_button, FALSE, FALSE, 0);
+    
+    
+    g_signal_connect(enter_button, "clicked", G_CALLBACK(join_server), window);
+
+    
+    // Show all widgets
+    gtk_widget_show_all(window);
 }
 
 void *display(){
@@ -370,6 +409,6 @@ void *display(){
     
     // Run the GTK main loop
     gtk_main();
-    
+
     return 0;
 }
