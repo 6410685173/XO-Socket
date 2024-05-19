@@ -11,6 +11,7 @@
 #include <pthread.h>
 
 void *socket_server();
+void *socket_client();
 void screen();
 void send_data(GtkWidget *button, gpointer user_data);
 void recv_data();
@@ -20,18 +21,22 @@ void *display();
 void switch_to_game_mode(GtkWidget *window);
 void create_grid_and_buttons(GtkWidget *window);
 void create_server(GtkWidget *button, gpointer window);
-void mode2_selected(GtkWidget *button, gpointer window);
+void create_join(GtkWidget *button, gpointer window);
+void join_server(GtkWidget *button, gpointer window);
 void restart();
-/* gboolean update_winner_label(gpointer user_data);
-void schedule_winner_update(const char *status); */
 gboolean update_button_label(gpointer data);
 void schedule_button_label_update(GtkWidget *button, const gchar *label);
+void switch_to_game_mode(GtkWidget *window);
+void create_grid_and_buttons(GtkWidget *window);
+
+
 
 char board[3][3] = {{' ',' ',' '},
                     {' ',' ',' '},
                     {' ',' ',' '}}; //initial board
 
 GtkWidget *buttons[9];
+GtkWidget *ip_entry ;
 char my_role;
 char friend_role;
 pthread_mutex_t lock_board;
@@ -40,7 +45,7 @@ int connect_soc = 0;
 char buffer[7];
 char mode[10] = "";
 GtkWidget *winner;
-
+gchar *ip_host = "";
 
 int main(int argc ,char *argv[]){
     
@@ -56,9 +61,15 @@ int main(int argc ,char *argv[]){
         printf("server\n");
         socket_server(5000);
         //pthread_create(&game_thread, NULL, check_winner, NULL);
+    }else if (strcmp(mode,"client") == 0){
+        printf("client\n");
+        //wait for entering ip 
+        while(strcmp(ip_host,"") == 0){};
+        //printf("%s\n",ip_host);
+        socket_client();
+
     }else{
-        printf("client");
-        
+        printf("wrong mode\n");
     }
     return 0;
 }
@@ -99,6 +110,38 @@ void *socket_server(){
     close(conn_cli);
 }
 
+void *socket_client(){
+    int listen_server = 0,conn_cli = 0;
+    struct sockaddr_in servAddr;
+    memset(&servAddr, '0', sizeof(servAddr));
+    memset(buffer, '0', sizeof(buffer)); 
+
+    listen_server = socket(AF_INET, SOCK_STREAM, 0); // use TCP connection 
+
+    servAddr.sin_family = AF_INET; // internet protocol IPV4
+    servAddr.sin_port = htons(5000); 
+    inet_pton(AF_INET, ip_host, &servAddr.sin_addr);
+    conn_cli = connect(listen_server, (struct sockaddr *)&servAddr, sizeof(servAddr));
+    
+    if(conn_cli < 0){
+        printf("no connection");
+    }
+    my_role = 'O';
+    friend_role = 'X';
+    connect_soc = listen_server;
+    while(conn_cli >= 0){
+
+        recv_data();
+        check_winner();
+        memset(buffer, '0', sizeof(buffer)); 
+        printf("Your turn\n");
+        screen();
+        
+        
+    }
+
+}
+
 void send_data(GtkWidget *button, gpointer user_data){
     
     int *position = (int *)user_data;
@@ -126,7 +169,7 @@ void recv_data(){
         {' ', ' ', ' '},
         {' ', ' ', ' '}
         };
-    
+        gtk_label_set_text(GTK_LABEL(winner), "");
         memcpy(board, new_board, sizeof(new_board));
 
         for(int i = 0 ;i<9;i++){
@@ -192,17 +235,6 @@ void schedule_button_label_update(GtkWidget *button, const gchar *label) {
     update_data->label = g_strdup(label);
     g_idle_add(update_button_label, update_data);
 }
-
-/* gboolean update_winner_label(gpointer user_data) {
-    const char *status = (const char *)user_data;
-    gtk_label_set_text(GTK_LABEL(winner), status);
-    return G_SOURCE_REMOVE;
-}
-
-void schedule_winner_update(const char *status) {
-    g_idle_add(update_winner_label, (gpointer)status);
-} */
-
 
 void check_winner(){
     pthread_mutex_lock (&lock_board);
@@ -332,7 +364,7 @@ void switch_to_game_mode(GtkWidget *window) {
     
     // Connect signals for mode selection
     g_signal_connect(mode1_button, "clicked", G_CALLBACK(create_server), window);
-    g_signal_connect(mode2_button, "clicked", G_CALLBACK(mode2_selected), window);
+    g_signal_connect(mode2_button, "clicked", G_CALLBACK(create_join), window);
     
     // Create a vertical box to hold the widgets
     GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 10);
@@ -353,11 +385,41 @@ void create_server(GtkWidget *button, gpointer window) {
     create_grid_and_buttons(GTK_WIDGET(window));
 }
 
-// Callback function for mode 2 selection
-void mode2_selected(GtkWidget *button, gpointer window) {
-    // Switch to mode 2 screen
+// Callback function for joing server
+void join_server(GtkWidget *button, gpointer window) {
+    
+    ip_host = g_strdup(gtk_entry_get_text(GTK_ENTRY(ip_entry)));
     create_grid_and_buttons(GTK_WIDGET(window));
 }
+
+
+// Callback function for creating join server
+void create_join(GtkWidget *button, gpointer window) {
+    strcpy(mode, "client");
+    // Clear any existing children of the window
+    gtk_container_foreach(GTK_CONTAINER(window), (GtkCallback)gtk_widget_destroy, NULL);
+    
+    // Create box 
+    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);
+    gtk_container_add(GTK_CONTAINER(window), box);
+
+    // widget
+    ip_entry = gtk_entry_new();
+    GtkWidget *enter_button = gtk_button_new_with_label("Join");
+    GtkWidget *label = gtk_label_new("Enter IP address");
+
+    gtk_box_pack_start(GTK_BOX(box), label, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(box), ip_entry, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(box), enter_button, FALSE, FALSE, 0);
+    
+    
+    g_signal_connect(enter_button, "clicked", G_CALLBACK(join_server), window);
+
+    
+    // Show all widgets
+    gtk_widget_show_all(window);
+}
+
 
 void *display(){
 
