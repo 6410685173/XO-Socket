@@ -59,15 +59,17 @@ int main(int argc ,char *argv[]){
 
     if ( strcmp(mode,"server") == 0){
         printf("server\n");
-        socket_server(5000);
-        //pthread_create(&game_thread, NULL, check_winner, NULL);
+        socket_server();
+        //pthread_create(&game_thread, NULL, socket_server, NULL);
+        //while(1){sleep(5);};
     }else if (strcmp(mode,"client") == 0){
         printf("client\n");
         //wait for entering ip 
         while(strcmp(ip_host,"") == 0){};
         //printf("%s\n",ip_host);
         socket_client();
-
+        //pthread_create(&game_thread, NULL, socket_client, NULL);
+        //while(1){sleep(5);};
     }else{
         printf("wrong mode\n");
     }
@@ -153,6 +155,7 @@ void send_data(GtkWidget *button, gpointer user_data){
     write(connect_soc, buffer, strlen(buffer)); 
     update_board(row * 3 + col + 1, my_role, button , label_send);
     check_winner();
+    screen();
 }
 
 void recv_data(){
@@ -316,7 +319,7 @@ void restart(){
 }
 
 void create_grid_and_buttons(GtkWidget *window) {
-    // Clear any existing children of the window
+    
     gtk_container_foreach(GTK_CONTAINER(window), (GtkCallback)gtk_widget_destroy, NULL);
     
     // Create a grid container
@@ -327,7 +330,7 @@ void create_grid_and_buttons(GtkWidget *window) {
     //create a box
     gtk_box_pack_start(GTK_BOX(box), winner, FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(box), grid, TRUE, TRUE, 0);
-    // Create buttons and add them to the grid
+    
     int k = 0;
     for (int i = 0; i < 3; i++) {
         for (int j = 0; j < 3; j++) {
@@ -352,21 +355,20 @@ void create_grid_and_buttons(GtkWidget *window) {
     gtk_widget_show_all(window);
 }
 
-// Function to switch to the game mode screen
+
 void switch_to_game_mode(GtkWidget *window) {
-    // Remove any existing widgets from the window
+
     gtk_container_foreach(GTK_CONTAINER(window), (GtkCallback)gtk_widget_destroy, NULL);
     
-    // Create widgets for the game mode screen
+    // widgets game mode screen
     GtkWidget *game_label = gtk_label_new("Select Game Mode:");
     GtkWidget *mode1_button = gtk_button_new_with_label("Create server");
     GtkWidget *mode2_button = gtk_button_new_with_label("Join server");
     
-    // Connect signals for mode selection
     g_signal_connect(mode1_button, "clicked", G_CALLBACK(create_server), window);
     g_signal_connect(mode2_button, "clicked", G_CALLBACK(create_join), window);
     
-    // Create a vertical box to hold the widgets
+    // vertical box to hold the widgets
     GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 10);
     gtk_box_pack_start(GTK_BOX(vbox), game_label, FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(vbox), mode1_button, FALSE, FALSE, 0);
@@ -378,14 +380,14 @@ void switch_to_game_mode(GtkWidget *window) {
     gtk_widget_show_all(window);
 }
 
-// Callback function for creating server
+// function for creating server
 void create_server(GtkWidget *button, gpointer window) {
 
     strcpy(mode, "server");
     create_grid_and_buttons(GTK_WIDGET(window));
 }
 
-// Callback function for joing server
+// function for joing server
 void join_server(GtkWidget *button, gpointer window) {
     
     ip_host = g_strdup(gtk_entry_get_text(GTK_ENTRY(ip_entry)));
@@ -393,7 +395,7 @@ void join_server(GtkWidget *button, gpointer window) {
 }
 
 
-// Callback function for creating join server
+// function for creating join server
 void create_join(GtkWidget *button, gpointer window) {
     strcpy(mode, "client");
     // Clear any existing children of the window
@@ -432,13 +434,13 @@ void *display(){
     
     g_signal_connect(window, "destroy", G_CALLBACK(destroy), NULL);
     gtk_container_set_border_width(GTK_CONTAINER(window), 100); 
-    // Start with the game mode selection screen
+
+    // game mode selection screen
     switch_to_game_mode(window);
     
-    // Show the window
     gtk_widget_show(window);
     
-    // Run the GTK main loop
+    // Run GTK main loop
     gtk_main();
     
     return 0;
